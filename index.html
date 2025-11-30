@@ -1,0 +1,2141 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlgoViz - Interactive Data Structures</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        primary: '#6366f1',
+                        secondary: '#ec4899',
+                        accent: '#8b5cf6',
+                        dark: '#0f172a',
+                        darkSurface: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Animations & Base Styles */
+        body {
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        @keyframes strokeDraw {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        .node-enter {
+            animation: popIn 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        .node-exit {
+            function render() {
+                const container = document.getElementById('visualizer');
+                const emptyState = document.getElementById('emptyState');
+
+                // Clear current but keep structure
+                container.innerHTML = '';
+
+                if (state.data.length === 0) {
+                    emptyState.style.display = 'flex';
+                    return;
+                } else {
+                    emptyState.style.display = 'none';
+                }
+
+                // Apply specific container classes based on mode
+                container.className = 'relative w-full h-full p-8 transition-all duration-500'; // Reset
+                if (state.mode === 'stack') container.classList.add('stack-container');
+                if (state.mode === 'queue') container.classList.add('queue-container');
+                if (state.mode === 'linkedList') container.classList.add('ll-container');
+
+                // If circular linked list requested, layout nodes on a circle
+                const isCircular = (state.mode === 'linkedList' && state.listType === 'circular');
+
+                // We'll collect positions for connector drawing
+                const positions = [];
+
+                // Generate Nodes
+                state.data.forEach((val, index) => {
+                    const nodeWrapper = document.createElement('div');
+                    nodeWrapper.id = `node-${index}`;
+                    nodeWrapper.className = `node-enter`;
+
+                    // Node Visual
+                    const node = document.createElement('div');
+
+                    // Base Styling
+                    let baseClasses = "w-16 h-16 md:w-20 md:h-20 flex items-center justify-center font-mono text-lg md:text-xl font-bold rounded-xl shadow-lg border-2 border-white/20 transition-all duration-300";
+
+                    // Colors based on index/role
+                    if (state.mode === 'stack' && index === state.data.length - 1) {
+                         node.className = `${baseClasses} bg-secondary text-white`; // Top of stack
+                    } else if (state.mode === 'queue' && index === 0) {
+                         node.className = `${baseClasses} bg-secondary text-white`; // Front of queue
+                    } else if (state.mode === 'linkedList' && index === 0) {
+                         node.className = `${baseClasses} bg-emerald-500 text-white`; // Head
+                    } else {
+                         node.className = `${baseClasses} bg-primary text-white`;
+                    }
+
+                    node.innerText = val;
+                    nodeWrapper.appendChild(node);
+
+                    // For non-circular layouts show small inline arrows between nodes (queue & linear linked list)
+                    if (!isCircular && (state.mode === 'queue' || state.mode === 'linkedList') && index < state.data.length - 1) {
+                        const arrow = document.createElement('div');
+                        arrow.className = "w-8 h-1 bg-gray-300 dark:bg-gray-600 arrow-enter relative mx-1";
+                        // Arrow head
+                        arrow.innerHTML = `<div class="absolute right-[-4px] top-[-5px] w-3 h-3 border-t-4 border-r-4 border-gray-300 dark:border-gray-600 rotate-45"></div>`;
+                        nodeWrapper.appendChild(arrow);
+
+                        // For doubly list show reverse arrow indicator (small) between nodes
+                        if (state.mode === 'linkedList' && state.listType === 'doubly') {
+                            const backArrow = document.createElement('div');
+                            backArrow.className = 'absolute -top-6 left-0 text-xs text-gray-400';
+                            backArrow.innerHTML = '<span class="font-mono">←</span>';
+                            nodeWrapper.appendChild(backArrow);
+                        }
+                    }
+
+                    // Stack Specific: Add "Top" label
+                    if(state.mode === 'stack' && index === state.data.length - 1) {
+                        const label = document.createElement('div');
+                        label.innerText = "TOP";
+                        label.className = "absolute -right-10 text-xs font-bold text-secondary tracking-widest";
+                        nodeWrapper.appendChild(label);
+                    }
+
+                    // LL Specific: Add "Head/Null/Circular" labels
+                    if(state.mode === 'linkedList') {
+                        if(index === 0) {
+                            const label = document.createElement('div');
+                            label.innerText = "HEAD";
+                            label.className = "absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-500";
+                            node.classList.add('relative');
+                            node.appendChild(label);
+                        }
+
+                        if(index === state.data.length -1) {
+                            if (state.listType === 'circular') {
+                                // Don't show "back to HEAD" text for circular
+                                // The SVG connector shows the circular connection visually
+                            } else {
+                                // non-circular -> show NULL
+                                const nullNode = document.createElement('div');
+                                nullNode.className = "text-gray-400 font-mono text-sm font-bold ml-2";
+                                nullNode.innerText = "NULL";
+                                nodeWrapper.appendChild(nullNode);
+                            }
+                        }
+                    }
+
+                    // Positioning: for circular we use absolute positions later; otherwise keep relative flex flow
+                    if (isCircular) {
+                        nodeWrapper.style.position = 'absolute';
+                        nodeWrapper.style.transform = 'translate(-50%, -50%)';
+                        nodeWrapper.style.transition = 'left 0.45s cubic-bezier(0.22,1,0.36,1), top 0.45s cubic-bezier(0.22,1,0.36,1)';
+                    } else {
+                        nodeWrapper.classList.add('flex', 'items-center', 'relative');
+                    }
+
+                    container.appendChild(nodeWrapper);
+                });
+
+            // If circular, compute positions and draw connectors
+            if (isCircular) {
+                // Ensure container has a size
+                const rect = container.getBoundingClientRect();
+                const width = rect.width || container.clientWidth || 600;
+                const height = rect.height || container.clientHeight || 400;
+                const cx = width / 2;
+                const cy = height / 2;
+                const radius = Math.min(width, height) / 2 - 80; // margin for nodes
+                const n = state.data.length;
+
+                // Collect computed centers and position each node
+                const centers = [];
+                for (let i = 0; i < n; i++) {
+                    const angleDeg = -90 + (i * (360 / n)); // start at top
+                    const angle = angleDeg * (Math.PI / 180);
+                    const x = cx + radius * Math.cos(angle);
+                    const y = cy + radius * Math.sin(angle);
+
+                    const wrapper = document.getElementById(`node-${i}`);
+                    if (!wrapper) continue;
+
+                    // Measure wrapper size (node element inside)
+                    const nodeEl = wrapper.firstElementChild;
+                    const w = nodeEl ? nodeEl.offsetWidth : 64;
+                    const h = nodeEl ? nodeEl.offsetHeight : 64;
+
+                    // Set center position
+                    wrapper.style.left = x + 'px';
+                    wrapper.style.top = y + 'px';
+
+                    // Rotate labels for circular layout so they stay upright
+                    const label = nodeEl.querySelector('div'); // HEAD label inside node
+                    if (label && label.innerText === 'HEAD') {
+                        // Rotate label so it faces outward/stays readable
+                        const labelRotation = angleDeg + 90; // perpendicular rotation for upright text
+                        label.style.transform = `rotate(${labelRotation}deg)`;
+                        label.style.transformOrigin = 'center';
+                    }
+
+                    // Save center coords for connector drawing
+                    centers.push({ x, y, w, h });
+                }                    // Create SVG overlay for curved connectors
+                    const svgns = 'http://www.w3.org/2000/svg';
+                    const svg = document.createElementNS(svgns, 'svg');
+                    svg.setAttribute('width', width);
+                    svg.setAttribute('height', height);
+                    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+                    svg.style.position = 'absolute';
+                    svg.style.left = '0';
+                    svg.style.top = '0';
+                    svg.style.pointerEvents = 'none';
+                    svg.style.zIndex = '5';
+
+                    // Arrow marker
+                    const defs = document.createElementNS(svgns, 'defs');
+                    const marker = document.createElementNS(svgns, 'marker');
+                    marker.setAttribute('id', 'arrowhead');
+                    marker.setAttribute('markerWidth', '8');
+                    marker.setAttribute('markerHeight', '8');
+                    marker.setAttribute('refX', '6');
+                    marker.setAttribute('refY', '3');
+                    marker.setAttribute('orient', 'auto');
+                    marker.setAttribute('markerUnits', 'strokeWidth');
+                    const arrowPath = document.createElementNS(svgns, 'path');
+                    arrowPath.setAttribute('d', 'M0,0 L6,3 L0,6 L2,3 z');
+                    arrowPath.setAttribute('fill', 'rgba(156,163,175,0.95)');
+                    marker.appendChild(arrowPath);
+                    defs.appendChild(marker);
+                    svg.appendChild(defs);
+
+                // Draw paths between consecutive centers (including last -> first)
+                for (let i = 0; i < centers.length; i++) {
+                    const a = centers[i];
+                    const b = centers[(i + 1) % centers.length];
+                    if (!a || !b) continue;
+
+                    // Compute start/end slightly offset from center toward outside to avoid overlapping node visuals
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                    const offsetA = (a.w/2) * 0.9;
+                    const offsetB = (b.w/2) * 0.9;
+                    const startX = a.x + (dx / dist) * offsetA;
+                    const startY = a.y + (dy / dist) * offsetA;
+                    const endX = b.x - (dx / dist) * offsetB;
+                    const endY = b.y - (dy / dist) * offsetB;
+
+                    // Control point: use midpoint pulled slightly toward center for a smooth arc
+                    const midX = (startX + endX) / 2;
+                    const midY = (startY + endY) / 2;
+                    const controlX = (midX + cx) / 2;
+                    const controlY = (midY + cy) / 2;
+
+                    const path = document.createElementNS(svgns, 'path');
+                    path.setAttribute('d', `M ${startX} ${startY} Q ${controlX} ${controlY} ${endX} ${endY}`);
+                    path.setAttribute('stroke', 'rgba(156,163,175,0.95)');
+                    path.setAttribute('stroke-width', '2');
+                    path.setAttribute('fill', 'none');
+                    path.setAttribute('marker-end', 'url(#arrowhead)');
+                    path.style.opacity = '0.95';
+                    
+                    // Compute path length for stroke-dasharray animation
+                    const pathLen = path.getTotalLength();
+                    path.style.strokeDasharray = pathLen + ' ' + pathLen;
+                    path.style.strokeDashoffset = pathLen;
+                    path.style.animation = `strokeDraw 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards`;
+                    path.style.animationDelay = (i * 0.08) + 's';
+
+                    svg.appendChild(path);
+                }                    container.appendChild(svg);
+                }
+
+                // Scroll to relevant position (non-circular)
+                setTimeout(() => {
+                    if(state.mode === 'stack') container.scrollTop = container.scrollHeight;
+                    if(!isCircular && (state.mode === 'queue' || state.mode === 'linkedList')) container.scrollLeft = container.scrollWidth;
+                }, 100);
+            }
+            }
+        }
+
+        @keyframes peekPulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+            }
+            50% {
+                transform: scale(1.25);
+                box-shadow: 0 0 30px 10px rgba(59, 130, 246, 0.4);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+            }
+        }
+
+        @keyframes peekGlow {
+            0% {
+                background: rgba(99, 102, 241, 0.1);
+                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.5), inset 0 0 20px rgba(99, 102, 241, 0.2);
+                filter: brightness(1);
+            }
+            40% {
+                background: rgba(99, 102, 241, 0.25);
+                box-shadow: 0 0 40px 15px rgba(99, 102, 241, 0.8), inset 0 0 25px rgba(99, 102, 241, 0.4);
+                filter: brightness(1.2);
+            }
+            100% {
+                background: rgba(99, 102, 241, 0.1);
+                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0), inset 0 0 20px rgba(99, 102, 241, 0.2);
+                filter: brightness(1);
+            }
+        }
+
+        @keyframes peekShine {
+            0% {
+                background-position: -1000px 0;
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                background-position: 1000px 0;
+                opacity: 0;
+            }
+        }
+
+        @keyframes peekRing {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.9);
+            }
+            50% {
+                box-shadow: 0 0 20px 8px rgba(99, 102, 241, 0.6);
+            }
+            100% {
+                transform: scale(1.4);
+                opacity: 0;
+                box-shadow: 0 0 0 25px rgba(99, 102, 241, 0);
+            }
+        }
+
+        .peek-highlight {
+            animation: peekGlow 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+            position: relative !important;
+        }
+
+        .peek-highlight::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent 25%, rgba(255,255,255,0.3) 50%, transparent 75%);
+            animation: peekShine 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        /* Middle reveal styles (distinct from peek) */
+        .middle-highlight {
+            position: relative !important;
+            animation: peekPulse 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            box-shadow: 0 8px 30px rgba(250, 204, 21, 0.85) !important;
+            border-color: rgba(250, 204, 21, 0.9) !important;
+        }
+
+        .middle-reveal {
+            animation: cardBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            background: radial-gradient(circle at 20% 20%, rgba(255, 237, 153, 0.95), rgba(250, 204, 21, 0.95));
+            color: #111827;
+            border: 1px solid rgba(255, 243, 205, 0.9);
+            box-shadow: 0 18px 40px rgba(250, 204, 21, 0.25), 0 0 30px rgba(250, 204, 21, 0.35) inset;
+            padding: 12px 18px;
+            border-radius: 12px;
+        }
+
+        @keyframes flipIn {
+            0% {
+                opacity: 0;
+                transform: rotateY(90deg);
+            }
+            50% {
+                opacity: 0.7;
+            }
+            100% {
+                opacity: 1;
+                transform: rotateY(0deg);
+            }
+        }
+
+        @keyframes slideInRight {
+            0% {
+                opacity: 0;
+                transform: translateX(50px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes cardPulse {
+            0% {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.05);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        @keyframes cardBounce {
+            0% {
+                transform: translate(-50%, -50%) scale(0.7) rotateX(90deg);
+                opacity: 0;
+            }
+            60% {
+                transform: translate(-50%, -50%) scale(1.1) rotateX(0deg);
+            }
+            100% {
+                transform: translate(-50%, -50%) scale(1) rotateX(0deg);
+                opacity: 1;
+            }
+        }
+
+        @keyframes cardGlow {
+            0%, 100% {
+                filter: drop-shadow(0 0 10px rgba(99, 102, 241, 0.5));
+            }
+            50% {
+                filter: drop-shadow(0 0 30px rgba(99, 102, 241, 1));
+            }
+        }
+
+        .peek-card-enter {
+            animation: cardBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), cardGlow 1.5s ease-in-out infinite !important;
+        }
+
+        @keyframes deleteFloatAway {
+            0% { 
+                opacity: 1; 
+                transform: scale(1) translateY(0) translateX(0) rotate(0deg);
+            }
+            30% {
+                opacity: 0.9;
+                transform: scale(1.05) translateY(-20px) translateX(0) rotate(2deg);
+            }
+            100% { 
+                opacity: 0; 
+                transform: scale(0.4) translateY(-120px) translateX(0) rotate(15deg);
+            }
+        }
+
+        @keyframes deleteFloatLeft {
+            0% { 
+                opacity: 1; 
+                transform: scale(1) translateX(0) rotate(0deg);
+            }
+            30% {
+                opacity: 0.9;
+                transform: scale(1.05) translateX(-20px) rotate(-2deg);
+            }
+            100% { 
+                opacity: 0; 
+                transform: scale(0.4) translateX(-180px) rotate(-25deg);
+            }
+        }
+
+        @keyframes deleteFloatRight {
+            0% { 
+                opacity: 1; 
+                transform: scale(1) translateX(0) rotate(0deg);
+            }
+            30% {
+                opacity: 0.9;
+                transform: scale(1.05) translateX(20px) rotate(2deg);
+            }
+            100% { 
+                opacity: 0; 
+                transform: scale(0.4) translateX(180px) rotate(25deg);
+            }
+        }
+
+        .delete-animation {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .delete-float-away {
+            animation: deleteFloatAway 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
+        }
+
+        .delete-float-left {
+            animation: deleteFloatLeft 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
+        }
+
+        .delete-float-right {
+            animation: deleteFloatRight 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards !important;
+        }
+
+        @keyframes floatUp {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(0.7);
+            }
+            30% {
+                opacity: 0.9;
+                transform: translate(-50%, -50%) scale(1.15);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -180px) scale(0.8);
+            }
+        }
+
+        .peek-card-enter {
+            animation: cardBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), cardGlow 1.5s ease-in-out infinite !important;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            height: 8px;
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+
+        /* Specific DS Layouts */
+        .stack-container {
+            display: flex;
+            flex-direction: column-reverse;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100%;
+            padding-bottom: 2rem;
+            overflow-y: auto;
+        }
+
+        .queue-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-start; /* Queue grows to right */
+            height: 100%;
+            padding: 0 2rem;
+            overflow-x: auto;
+        }
+
+        .ll-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-start;
+            flex-wrap: nowrap;
+            height: 100%;
+            padding: 0 2rem;
+            overflow-x: auto;
+        }
+
+        /* AI Modal Styles */
+        .ai-modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        .ai-sparkle-btn {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            transition: all 0.3s ease;
+        }
+        .ai-sparkle-btn:hover {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-800 dark:bg-dark dark:text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <nav class="w-full bg-white dark:bg-darkSurface border-b border-gray-200 dark:border-gray-700 p-4 shadow-sm flex justify-between items-center z-10">
+        <div class="flex items-center gap-3">
+            <div class="bg-primary/10 p-2 rounded-lg">
+                <i data-lucide="layers" class="text-primary w-6 h-6"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight">Algo<span class="text-primary">Viz</span></h1>
+        </div>
+        
+        <div class="flex gap-4 items-center">
+            <div class="hidden md:flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full text-sm">
+                <span class="text-gray-500 dark:text-gray-400">Speed:</span>
+                <input type="range" min="1" max="5" value="3" class="accent-primary w-24 h-1.5 bg-gray-300 rounded-lg appearance-none cursor-pointer" id="speedControl">
+            </div>
+            <button onclick="toggleTheme()" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <i data-lucide="moon" class="w-5 h-5 dark:hidden"></i>
+                <i data-lucide="sun" class="w-5 h-5 hidden dark:block text-yellow-400"></i>
+            </button>
+        </div>
+    </nav>
+
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- Sidebar Navigation -->
+        <aside class="w-20 md:w-64 bg-white dark:bg-darkSurface border-r border-gray-200 dark:border-gray-700 flex flex-col z-0">
+            <div class="p-4 space-y-2">
+                <button onclick="setMode('stack')" id="btn-stack" class="nav-btn w-full flex items-center gap-3 p-3 rounded-xl bg-primary text-white shadow-lg shadow-primary/30 transition-all">
+                    <i data-lucide="server" class="w-5 h-5"></i>
+                    <span class="hidden md:inline font-medium">Stack</span>
+                </button>
+                <button onclick="setMode('queue')" id="btn-queue" class="nav-btn w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-all">
+                    <i data-lucide="git-commit-horizontal" class="w-5 h-5"></i>
+                    <span class="hidden md:inline font-medium">Queue</span>
+                </button>
+                <button onclick="setMode('linkedList')" id="btn-linkedList" class="nav-btn w-full flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-all">
+                    <i data-lucide="link" class="w-5 h-5"></i>
+                    <span class="hidden md:inline font-medium">Linked List</span>
+                </button>
+            </div>
+
+            <div class="mt-auto p-4 border-t border-gray-200 dark:border-gray-700">
+                <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800/50">
+                    <h3 class="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1 uppercase tracking-wider">Current Mode</h3>
+                    <p class="text-sm font-bold" id="currentModeLabel">Stack</p>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+            
+            <!-- Controls Bar -->
+            <div class="bg-white dark:bg-darkSurface border-b border-gray-200 dark:border-gray-700 p-4 flex flex-wrap gap-4 items-center justify-between z-10">
+                <div class="flex gap-2 w-full md:w-auto">
+                    <input type="number" id="dataInput" placeholder="Enter value (e.g. 42)" class="w-full md:w-48 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary transition-all">
+                    <button onclick="handleRandom()" class="p-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700" title="Random Value">
+                        <i data-lucide="shuffle" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                
+                <!-- AI Tools -->
+                <div class="flex gap-2">
+                    <button onclick="askGemini('explain')" class="ai-sparkle-btn text-white px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-sm">
+                        <i data-lucide="sparkles" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">Explain State</span>
+                    </button>
+                    <button onclick="askGemini('quiz')" class="bg-white dark:bg-darkSurface border border-primary/30 text-primary dark:text-primary hover:bg-primary/5 dark:hover:bg-primary/10 px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors">
+                        <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                        <span class="hidden sm:inline">AI Quiz</span>
+                    </button>
+                </div>
+
+                <!-- Dynamic Action Buttons -->
+                <div id="actionButtons" class="flex flex-wrap gap-2">
+                    <!-- Injected via JS -->
+                </div>
+            </div>
+
+            <!-- Visualization Canvas -->
+            <div class="flex-1 bg-gray-50 dark:bg-[#0b1120] relative overflow-hidden">
+                <!-- Grid Background Pattern -->
+                <div class="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]" 
+                     style="background-image: radial-gradient(#6366f1 1px, transparent 1px); background-size: 20px 20px;">
+                </div>
+
+                <!-- Container for Nodes -->
+                <div id="visualizer" class="relative w-full h-full p-8 transition-all duration-500">
+                    <!-- Nodes injected here -->
+                </div>
+
+                <!-- Empty State Message -->
+                <div id="emptyState" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 opacity-50 pointer-events-none">
+                    <i data-lucide="box-select" class="w-16 h-16 mb-2"></i>
+                    <p class="text-lg">Structure is empty</p>
+                </div>
+            </div>
+
+            <!-- Info Panel (Collapsible) -->
+            <div class="bg-white dark:bg-darkSurface border-t border-gray-200 dark:border-gray-700 flex flex-col md:flex-row h-1/3 md:h-64 transition-all">
+                
+                <!-- Description -->
+                <div class="flex-1 p-6 overflow-y-auto border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i data-lucide="book-open" class="text-secondary w-5 h-5"></i>
+                        <h2 class="font-bold text-lg">How it Works</h2>
+                    </div>
+                    <p id="descText" class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-4">
+                        <!-- Dynamic Text -->
+                    </p>
+                    <div class="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800/30 p-3 rounded-lg">
+                        <h4 class="text-xs font-bold text-yellow-700 dark:text-yellow-500 uppercase mb-1">Real-world Use Case</h4>
+                        <p id="useCaseText" class="text-xs text-yellow-800 dark:text-yellow-400 italic">
+                            <!-- Dynamic Text -->
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Complexity & Code -->
+                <div class="flex-1 p-6 bg-gray-50 dark:bg-[#161f32] overflow-y-auto font-mono text-xs md:text-sm">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div class="bg-white dark:bg-darkSurface p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <span class="block text-gray-400 text-xs mb-1">Time Complexity (Access)</span>
+                            <span id="timeAccess" class="font-bold text-secondary">O(n)</span>
+                        </div>
+                        <div class="bg-white dark:bg-darkSurface p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
+                            <span class="block text-gray-400 text-xs mb-1">Time Complexity (Insert/Del)</span>
+                            <span id="timeInsert" class="font-bold text-emerald-500">O(1)</span>
+                        </div>
+                    </div>
+                    
+                    <div class="relative group">
+                        <div class="absolute top-2 right-2 text-gray-400 text-xs">Pseudo-Code</div>
+                        <pre class="language-javascript text-gray-700 dark:text-gray-300 overflow-x-auto"><code id="codeBlock">
+// Operation logic will appear here
+                        </code></pre>
+                    </div>
+                </div>
+
+                <!-- AI Content Panel -->
+                <div class="flex-1 p-4 bg-white dark:bg-darkSurface border-t md:border-t-0 md:border-l border-gray-200 dark:border-gray-700 overflow-y-auto">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i data-lucide="sparkles" class="text-primary w-5 h-5"></i>
+                        <h2 class="font-bold text-lg" id="aiPanelTitle">AI Assistant</h2>
+                    </div>
+                    
+                    <div id="aiPanelLoading" class="hidden flex-col items-center justify-center py-4">
+                        <div class="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-2"></div>
+                        <p class="text-xs text-gray-500 animate-pulse">Loading...</p>
+                    </div>
+                    
+                    <div id="aiPanelContent" class="prose dark:prose-invert text-xs leading-relaxed text-gray-600 dark:text-gray-300 overflow-y-auto max-h-32">
+                        <!-- AI Text Goes Here -->
+                    </div>
+                    
+                    <div id="aiPanelQuizContainer" class="hidden flex flex-col gap-2">
+                        <div id="aiPanelQuestion" class="text-xs font-semibold text-gray-800 dark:text-gray-100 leading-tight"></div>
+                        <div id="aiPanelOptions" class="flex flex-col gap-1"></div>
+                        <div id="aiPanelResult" class="hidden mt-2 p-2 rounded-lg text-xs leading-tight overflow-y-auto max-h-16"></div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-4 right-4 translate-y-24 opacity-0 transition-all duration-300 bg-dark dark:bg-white text-white dark:text-dark px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 z-50">
+        <i data-lucide="info" class="w-5 h-5"></i>
+        <span id="toastMsg" class="font-medium text-sm">Notification</span>
+    </div>
+
+    <!-- AI Modal -->
+    <div id="aiModal" class="fixed inset-0 ai-modal-backdrop hidden items-center justify-center z-50 p-4 opacity-0 transition-opacity duration-300">
+        <div class="bg-white dark:bg-darkSurface w-full max-w-lg rounded-2xl shadow-2xl transform scale-95 transition-transform duration-300 flex flex-col max-h-[80vh]">
+            <!-- Header -->
+            <div class="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gradient-to-r from-primary/10 to-transparent rounded-t-2xl">
+                <div class="flex items-center gap-2 text-primary font-bold text-lg">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    <span id="aiModalTitle">AI Assistant</span>
+                </div>
+                <button onclick="closeAIModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            
+            <!-- Content -->
+            <div class="p-6 overflow-y-auto flex flex-col max-h-full">
+                <div id="aiLoading" class="hidden flex-col items-center justify-center py-8">
+                    <div class="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin mb-3"></div>
+                    <p class="text-sm text-gray-500 animate-pulse">Consulting Gemini...</p>
+                </div>
+                <div id="aiContent" class="prose dark:prose-invert text-sm leading-relaxed text-gray-600 dark:text-gray-300 overflow-y-auto">
+                    <!-- AI Text Goes Here -->
+                </div>
+                <div id="aiQuizContainer" class="hidden flex flex-col gap-3 mt-2 flex-1 overflow-y-auto">
+                    <div id="quizQuestion" class="text-sm font-semibold text-gray-800 dark:text-gray-100 leading-tight"></div>
+                    <div id="quizOptions" class="flex flex-col gap-1.5 flex-1 overflow-y-auto"></div>
+                    <div id="quizResult" class="hidden mt-2 p-2 rounded-lg text-xs leading-tight overflow-y-auto max-h-24"></div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+                <button onclick="closeAIModal()" class="px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-medium transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Gemini API Configuration ---
+        const apiKey = ""; // Set by environment
+
+        // --- State Management ---
+        const state = {
+            mode: 'stack', // stack, queue, linkedList
+            data: [], // Array to hold values
+            maxSize: 12,
+            speed: 3,
+            // linked list specific
+            listType: 'singly' // 'singly' | 'doubly' | 'circular'
+        };
+
+        // --- Data Definitions (Educational Content) ---
+        const dsInfo = {
+            stack: {
+                title: "Stack (LIFO)",
+                desc: "A Stack is a linear data structure which follows a particular order in which the operations are performed. The order may be LIFO (Last In First Out). Think of it like a stack of plates.",
+                useCase: "Undo mechanisms in text editors, Browser history (Back button), Function call stack in programming.",
+                complexity: { access: "O(n)", insert: "O(1)" },
+                code: `push(item) {\n  stack.top += 1;\n  stack[top] = item;\n}\n\npop() {\n  if(isEmpty()) return error;\n  item = stack[top];\n  stack.top -= 1;\n  return item;\n}`
+            },
+            queue: {
+                title: "Queue (FIFO)",
+                desc: "A Queue is a linear structure which follows a particular order in which the operations are performed. The order is First In First Out (FIFO). Think of a line of people waiting for a bus.",
+                useCase: "Printer task scheduling, CPU process scheduling, Handling requests on a single shared resource.",
+                complexity: { access: "O(n)", insert: "O(1)" },
+                code: `enqueue(item) {\n  rear = (rear + 1) % capacity;\n  queue[rear] = item;\n}\n\n dequeue() {\n  item = queue[front];\n  front = (front + 1) % capacity;\n  return item;\n}`
+            },
+            linkedList: {
+                title: "Singly Linked List",
+                desc: "A linear data structure where elements are not stored at contiguous memory locations. The elements are linked using pointers. Each node contains data and a reference to the next node.",
+                useCase: "Image viewer (Next/Prev), Music players, Dynamic memory allocation where size isn't known.",
+                complexity: { access: "O(n)", insert: "O(1) at Head" },
+                code: `insert(data) {\n  newNode = new Node(data);\n  newNode.next = head;\n  head = newNode;\n}\n\n delete(key) {\n  temp = head;\n  prev = null;\n  while(temp != null && temp.data != key) {\n     prev = temp;\n     temp = temp.next;\n  }\n  prev.next = temp.next;\n}`
+            }
+        };
+
+        // --- Utilities ---
+        function debounce(fn, delay = 200) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => fn.apply(this, args), delay);
+            };
+        }
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            setMode('stack');
+            
+            // Speed listener
+            document.getElementById('speedControl').addEventListener('input', (e) => {
+                state.speed = 6 - parseInt(e.target.value); // Invert: Higher val = lower delay
+            });
+
+            // Enter key on input
+            document.getElementById('dataInput').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    // Trigger the primary action based on mode
+                    if(state.mode === 'stack') pushStack();
+                    if(state.mode === 'queue') enqueue();
+                    if(state.mode === 'linkedList') insertHead();
+                }
+            });
+
+            // Debounced window resize for circular layout reflow
+            window.addEventListener('resize', debounce(() => {
+                if (state.mode === 'linkedList' && state.listType === 'circular') {
+                    render();
+                }
+            }, 250));
+        });
+
+        // --- Core Logic ---
+
+        function setMode(mode) {
+            state.mode = mode;
+            state.data = []; // Reset data
+            // reset extra linked list controls when switching away
+            updateUI();
+            render();
+        }
+
+        function updateUI() {
+            // Update Active Nav
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('bg-primary', 'text-white', 'shadow-lg', 'shadow-primary/30');
+                btn.classList.add('hover:bg-gray-100', 'dark:hover:bg-gray-800', 'text-gray-600', 'dark:text-gray-300');
+            });
+            const activeBtn = document.getElementById(`btn-${state.mode}`);
+            activeBtn.classList.remove('hover:bg-gray-100', 'dark:hover:bg-gray-800', 'text-gray-600', 'dark:text-gray-300');
+            activeBtn.classList.add('bg-primary', 'text-white', 'shadow-lg', 'shadow-primary/30');
+
+            // Update Labels
+            document.getElementById('currentModeLabel').innerText = dsInfo[state.mode].title;
+            document.getElementById('descText').innerText = dsInfo[state.mode].desc;
+            document.getElementById('useCaseText').innerText = dsInfo[state.mode].useCase;
+            document.getElementById('timeAccess').innerText = dsInfo[state.mode].complexity.access;
+            document.getElementById('timeInsert').innerText = dsInfo[state.mode].complexity.insert;
+            document.getElementById('codeBlock').innerText = dsInfo[state.mode].code;
+
+            // Render Buttons
+            const btnContainer = document.getElementById('actionButtons');
+            btnContainer.innerHTML = '';
+
+            const createBtn = (text, onClick, colorClass = 'bg-primary hover:bg-primary/90') => {
+                const btn = document.createElement('button');
+                btn.className = `${colorClass} text-white px-4 py-2 rounded-lg text-sm font-semibold transition-transform active:scale-95 shadow-sm`;
+                btn.innerText = text;
+                btn.onclick = onClick;
+                return btn;
+            };
+
+            if (state.mode === 'stack') {
+                btnContainer.appendChild(createBtn('Push', pushStack));
+                btnContainer.appendChild(createBtn('Pop', popStack, 'bg-secondary hover:bg-secondary/90'));
+                btnContainer.appendChild(createBtn('Peek', peekStack, 'bg-accent hover:bg-accent/90'));
+                btnContainer.appendChild(createBtn('Clear', clearAll, 'bg-gray-500 hover:bg-gray-600'));
+            } else if (state.mode === 'queue') {
+                btnContainer.appendChild(createBtn('Enqueue', enqueue));
+                btnContainer.appendChild(createBtn('Dequeue', dequeue, 'bg-secondary hover:bg-secondary/90'));
+                btnContainer.appendChild(createBtn('Front', peekQueue, 'bg-accent hover:bg-accent/90'));
+                btnContainer.appendChild(createBtn('Clear', clearAll, 'bg-gray-500 hover:bg-gray-600'));
+            } else if (state.mode === 'linkedList') {
+                btnContainer.appendChild(createBtn('Insert Head', insertHead));
+                btnContainer.appendChild(createBtn('Insert Tail', insertTail));
+                btnContainer.appendChild(createBtn('Delete Head', deleteHead, 'bg-secondary hover:bg-secondary/90'));
+                btnContainer.appendChild(createBtn('Delete Tail', deleteTail, 'bg-secondary hover:bg-secondary/90'));
+                btnContainer.appendChild(createBtn('Find Mid', findMiddle, 'bg-yellow-500 hover:bg-yellow-600'));
+
+                // Additional linked-list controls: insert/delete after a target and list-type selector
+                const extraWrapper = document.createElement('div');
+                extraWrapper.className = 'flex flex-wrap items-center gap-2';
+
+                // Insert After Target controls
+                const targetInput = document.createElement('input');
+                targetInput.id = 'targetInput';
+                targetInput.placeholder = 'Target value (after which)';
+                targetInput.className = 'px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm w-44';
+
+                const insertAfterBtn = createBtn('Insert After', insertAfterTarget);
+                const deleteAfterBtn = createBtn('Delete After', deleteAfterTarget, 'bg-secondary hover:bg-secondary/90');
+
+                // Insert at Index controls
+                const indexInput = document.createElement('input');
+                indexInput.id = 'indexInput';
+                indexInput.type = 'number';
+                indexInput.placeholder = 'Index';
+                indexInput.className = 'px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 text-sm w-24';
+                indexInput.min = '0';
+
+                const insertAtIndexBtn = createBtn('Insert at Index', insertAtIndex, 'bg-purple-500 hover:bg-purple-600');
+
+                // List type select
+                const listTypeSelect = document.createElement('select');
+                listTypeSelect.id = 'listTypeSelect';
+                listTypeSelect.className = 'px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm';
+                listTypeSelect.innerHTML = `
+                    <option value="singly">Singly</option>
+                    <option value="doubly">Doubly</option>
+                    <option value="circular">Circular</option>
+                `;
+                listTypeSelect.value = state.listType;
+                listTypeSelect.addEventListener('change', (e) => {
+                    state.listType = e.target.value;
+                    // update description & code snippets quickly
+                    if (state.listType === 'doubly') {
+                        document.getElementById('descText').innerText = 'Doubly linked list: each node has next and prev pointers.';
+                    } else if (state.listType === 'circular') {
+                        document.getElementById('descText').innerText = 'Circular linked list: tail points back to head forming a circle.';
+                    } else {
+                        document.getElementById('descText').innerText = dsInfo.linkedList.desc;
+                    }
+                    render();
+                });
+
+                extraWrapper.appendChild(targetInput);
+                extraWrapper.appendChild(insertAfterBtn);
+                extraWrapper.appendChild(deleteAfterBtn);
+                extraWrapper.appendChild(document.createElement('br'));
+                extraWrapper.appendChild(indexInput);
+                extraWrapper.appendChild(insertAtIndexBtn);
+                extraWrapper.appendChild(listTypeSelect);
+
+                btnContainer.appendChild(extraWrapper);
+            }
+        }
+
+        // --- Render Engine ---
+
+        function render() {
+            const container = document.getElementById('visualizer');
+            const emptyState = document.getElementById('emptyState');
+            
+            // Clear current but keep structure
+            container.innerHTML = '';
+            
+            if (state.data.length === 0) {
+                emptyState.style.display = 'flex';
+                return;
+            } else {
+                emptyState.style.display = 'none';
+            }
+
+            // Apply specific container classes based on mode
+            container.className = 'relative w-full h-full p-8 transition-all duration-500'; // Reset
+            if (state.mode === 'stack') container.classList.add('stack-container');
+            if (state.mode === 'queue') container.classList.add('queue-container');
+            if (state.mode === 'linkedList') container.classList.add('ll-container');
+
+            // Generate Nodes
+            state.data.forEach((val, index) => {
+                const nodeWrapper = document.createElement('div');
+                nodeWrapper.className = `flex items-center node-enter relative`;
+                nodeWrapper.id = `node-${index}`; 
+                
+                // Node Visual
+                const node = document.createElement('div');
+                
+                // Base Styling
+                let baseClasses = "w-16 h-16 md:w-20 md:h-20 flex items-center justify-center font-mono text-lg md:text-xl font-bold rounded-xl shadow-lg border-2 border-white/20 transition-all duration-300";
+                
+                // Colors based on index/role
+                if (state.mode === 'stack' && index === state.data.length - 1) {
+                     node.className = `${baseClasses} bg-secondary text-white`; // Top of stack
+                } else if (state.mode === 'queue' && index === 0) {
+                     node.className = `${baseClasses} bg-secondary text-white`; // Front of queue
+                } else if (state.mode === 'linkedList' && index === 0) {
+                     node.className = `${baseClasses} bg-emerald-500 text-white`; // Head
+                } else {
+                     node.className = `${baseClasses} bg-primary text-white`;
+                }
+
+                node.innerText = val;
+                nodeWrapper.appendChild(node);
+
+                // Add Pointer/Arrow if needed (queue & linked)
+                if ((state.mode === 'queue' || state.mode === 'linkedList') && index < state.data.length - 1) {
+                    const arrow = document.createElement('div');
+                    arrow.className = "w-8 h-1 bg-gray-300 dark:bg-gray-600 arrow-enter relative mx-1";
+                    // Arrow head
+                    arrow.innerHTML = `<div class=\"absolute right-[-4px] top-[-5px] w-3 h-3 border-t-4 border-r-4 border-gray-300 dark:border-gray-600 rotate-45\"></div>`;
+                    nodeWrapper.appendChild(arrow);
+
+                    // For doubly list show reverse arrow indicator (small) between nodes
+                    if (state.mode === 'linkedList' && state.listType === 'doubly') {
+                        const backArrow = document.createElement('div');
+                        backArrow.className = 'absolute -top-6 left-0 text-xs text-gray-400';
+                        backArrow.innerHTML = '<span class="font-mono">←</span>';
+                        nodeWrapper.appendChild(backArrow);
+                    }
+                }
+
+                // Stack Specific: Add "Top" label
+                if(state.mode === 'stack' && index === state.data.length - 1) {
+                    const label = document.createElement('div');
+                    label.innerText = "TOP";
+                    label.className = "absolute -right-10 text-xs font-bold text-secondary tracking-widest";
+                    nodeWrapper.appendChild(label);
+                }
+                
+                 // LL Specific: Add "Head/Null/Circular" labels
+                 if(state.mode === 'linkedList') {
+                    if(index === 0) {
+                        const label = document.createElement('div');
+                        label.innerText = "HEAD";
+                        label.className = "absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-emerald-500";
+                        node.classList.add('relative');
+                        node.appendChild(label);
+                    }
+
+                    // If circular and last, draw arrow back to head
+                    if(index === state.data.length -1) {
+                        if (state.listType === 'circular') {
+                            const circArrow = document.createElement('div');
+                            circArrow.className = 'ml-3 text-xs font-bold text-gray-400';
+                            circArrow.innerText = '↺ (back to HEAD)';
+                            nodeWrapper.appendChild(circArrow);
+                        } else {
+                            // non-circular -> show NULL
+                            const nullNode = document.createElement('div');
+                            nullNode.className = "text-gray-400 font-mono text-sm font-bold ml-2";
+                            nullNode.innerText = "NULL";
+                            nodeWrapper.appendChild(nullNode);
+                        }
+                    }
+                 }
+
+                container.appendChild(nodeWrapper);
+            });
+            
+            // Scroll to relevant position
+            setTimeout(() => {
+                if(state.mode === 'stack') container.scrollTop = container.scrollHeight;
+                if(state.mode === 'queue' || state.mode === 'linkedList') container.scrollLeft = container.scrollWidth;
+            }, 100);
+        }
+
+        // --- Operations ---
+
+        function getInput() {
+            const input = document.getElementById('dataInput');
+            const val = input.value.trim();
+            if (!val && val !== '0') {
+                showToast("Please enter a value!", "error");
+                return null;
+            }
+            if (val.length > 6) {
+                 showToast("Keep value short (max 6 chars)", "error");
+                 return null;
+            }
+            input.value = '';
+            input.focus();
+            return val;
+        }
+
+        // Create and animate deletion element
+        function createDeleteAnimation(nodeElement, direction = 'away') {
+            if (!nodeElement) return;
+            
+            const rect = nodeElement.getBoundingClientRect();
+            const deletedValue = nodeElement.innerText.split('\n')[0]; // Get just the value
+            
+            // Create floating element
+            const floatEl = document.createElement('div');
+            floatEl.className = `delete-animation delete-float-${direction}`;
+            floatEl.style.left = rect.left + 'px';
+            floatEl.style.top = rect.top + 'px';
+            floatEl.style.width = rect.width + 'px';
+            floatEl.style.height = rect.height + 'px';
+            floatEl.style.position = 'fixed';
+            
+            // Style it like the original node
+            floatEl.style.display = 'flex';
+            floatEl.style.alignItems = 'center';
+            floatEl.style.justifyContent = 'center';
+            floatEl.style.fontSize = nodeElement.style.fontSize || '14px';
+            floatEl.style.fontWeight = 'bold';
+            floatEl.style.borderRadius = '8px';
+            floatEl.style.backgroundColor = nodeElement.style.backgroundColor || '#6366f1';
+            floatEl.style.color = 'white';
+            floatEl.style.border = nodeElement.style.border || '2px solid #4f46e5';
+            floatEl.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.3), 0 0 15px rgba(99, 102, 241, 0.5)';
+            floatEl.style.zIndex = '9999';
+            floatEl.textContent = deletedValue;
+            
+            // Add to body while it's animating
+            document.body.appendChild(floatEl);
+            
+            // Trigger animation
+            requestAnimationFrame(() => {
+                floatEl.classList.add(`delete-float-${direction}`);
+            });
+            
+            // Remove after animation completes
+            setTimeout(() => {
+                floatEl.remove();
+            }, 900);
+        }
+
+        // Stack Operations
+        function pushStack() {
+            if (state.data.length >= state.maxSize) { showToast("Stack Overflow!", "error"); return; }
+            const val = getInput();
+            if (val === null) return;
+            state.data.push(val);
+            
+            // Show floating toast at the pushed element
+            setTimeout(() => {
+                const container = document.getElementById('visualizer');
+                const topNode = container.lastElementChild;
+                if (topNode) {
+                    const rect = topNode.getBoundingClientRect();
+                    showFloatingToast(`Pushed: ${val}`, rect.left + rect.width/2, rect.top + rect.height/2, "success");
+                }
+                showToast(`Pushed ${val} to stack`);
+            }, 50);
+            
+            render();
+        }
+
+        function popStack() {
+            if (state.data.length === 0) { showToast("Stack Underflow!", "error"); return; }
+            const container = document.getElementById('visualizer');
+            const topNode = container.lastElementChild; // In UI, top is last child
+            
+            // Capture value before animation
+            const deletedValue = state.data[state.data.length - 1];
+            
+            // Create floating animation
+            createDeleteAnimation(topNode, 'away');
+            
+            topNode.classList.remove('node-enter');
+            topNode.classList.add('node-exit');
+            
+            setTimeout(() => {
+                state.data.pop();
+                render();
+            }, 400 * (state.speed/3)); // Dynamic delay
+            showToast(`Popped: ${deletedValue}`, "success");
+        }
+
+        function peekStack() {
+            if (state.data.length === 0) { showToast("Stack is Empty", "error"); return; }
+            const container = document.getElementById('visualizer');
+            const topNode = container.lastElementChild;
+            
+            if (topNode) {
+                highlightPeekElement(topNode);
+                showPeekCard(state.data[state.data.length-1], topNode, 'top');
+            }
+            
+            showToast(`Top element is: ${state.data[state.data.length-1]}`);
+        }
+
+        // Queue Operations
+        function enqueue() {
+            if (state.data.length >= state.maxSize) { showToast("Queue Full!", "error"); return; }
+            const val = getInput();
+            if (val === null) return;
+            state.data.push(val);
+            
+            // Show floating toast at the enqueued element
+            setTimeout(() => {
+                const container = document.getElementById('visualizer');
+                const lastNode = container.lastElementChild;
+                if (lastNode) {
+                    const rect = lastNode.getBoundingClientRect();
+                    showFloatingToast(`Enqueued: ${val}`, rect.left + rect.width/2, rect.top + rect.height/2, "success");
+                }
+                showToast(`Enqueued ${val}`);
+            }, 50);
+            
+            render();
+        }
+
+        function dequeue() {
+            if (state.data.length === 0) { showToast("Queue Empty!", "error"); return; }
+            
+            // Capture value and position before animation
+            const deletedValue = state.data[0];
+            
+            const container = document.getElementById('visualizer');
+            const firstNode = container.firstElementChild;
+            const rect = firstNode.getBoundingClientRect();
+            const centerX = rect.left + rect.width/2;
+            const centerY = rect.top + rect.height/2;
+            
+            // Create floating animation to the left
+            createDeleteAnimation(firstNode, 'left');
+            
+            // Show floating toast
+            showFloatingToast(`Dequeued: ${deletedValue}`, centerX, centerY, "success");
+            
+            firstNode.classList.remove('node-enter');
+            firstNode.classList.add('node-exit');
+            
+            setTimeout(() => {
+                state.data.shift();
+                render();
+            }, 400 * (state.speed/3));
+            showToast(`Dequeued: ${deletedValue}`, "success");
+        }
+        
+        function peekQueue() {
+            if (state.data.length === 0) { showToast("Queue is Empty", "error"); return; }
+            const container = document.getElementById('visualizer');
+            const frontNode = container.firstElementChild;
+            
+            if (frontNode) {
+                highlightPeekElement(frontNode);
+                showPeekCard(state.data[0], frontNode, 'bottom');
+            }
+            
+            showToast(`Front element is: ${state.data[0]}`);
+        }
+
+        // Generic peek dispatcher: behaves per current mode
+        function peek() {
+            if (state.mode === 'stack') {
+                // Stack: show top
+                peekStack();
+                return;
+            }
+
+            if (state.mode === 'queue') {
+                // Queue: show front
+                peekQueue();
+                return;
+            }
+
+            if (state.mode === 'linkedList') {
+                // Linked list: show middle (as requested)
+                findMiddle();
+                return;
+            }
+
+            showToast('Peek not available for this mode', 'error');
+        }
+
+        // Linked List Operations
+        function insertHead() {
+             if (state.data.length >= state.maxSize) { showToast("List limit reached!", "error"); return; }
+            const val = getInput();
+            if (val === null) return;
+            state.data.unshift(val);
+            
+            // Show floating toast at the inserted element
+            setTimeout(() => {
+                const container = document.getElementById('visualizer');
+                const firstNode = container.firstElementChild;
+                if (firstNode) {
+                    const rect = firstNode.getBoundingClientRect();
+                    showFloatingToast(`Inserted: ${val}`, rect.left + rect.width/2, rect.top + rect.height/2, "success");
+                }
+                showToast(`Inserted ${val} at Head`);
+            }, 50);
+            
+            render();
+        }
+
+        function insertTail() {
+             if (state.data.length >= state.maxSize) { showToast("List limit reached!", "error"); return; }
+            const val = getInput();
+            if (val === null) return;
+            state.data.push(val);
+            
+            // Show floating toast at the inserted element
+            setTimeout(() => {
+                const container = document.getElementById('visualizer');
+                const lastNode = container.lastElementChild;
+                if (lastNode) {
+                    const rect = lastNode.getBoundingClientRect();
+                    showFloatingToast(`Inserted: ${val}`, rect.left + rect.width/2, rect.top + rect.height/2, "success");
+                }
+                showToast(`Inserted ${val} at Tail`);
+            }, 50);
+            
+            render();
+        }
+
+        function insertAtIndex() {
+             if (state.data.length >= state.maxSize) { showToast("List limit reached!", "error"); return; }
+            const val = getInput();
+            if (val === null) return;
+            
+            const indexInput = document.getElementById('indexInput');
+            const index = parseInt(indexInput.value);
+            
+            if (isNaN(index)) {
+                showToast("Please enter a valid index!", "error");
+                return;
+            }
+            
+            if (index < 0 || index > state.data.length) {
+                showToast(`Index must be between 0 and ${state.data.length}`, "error");
+                return;
+            }
+            
+            state.data.splice(index, 0, val);
+            indexInput.value = '';
+            
+            // Show floating toast at the inserted element
+            setTimeout(() => {
+                const container = document.getElementById('visualizer');
+                const nodes = container.querySelectorAll('.flex.items-center');
+                const insertedNode = nodes[index];
+                if (insertedNode) {
+                    const rect = insertedNode.getBoundingClientRect();
+                    showFloatingToast(`Inserted: ${val}`, rect.left + rect.width/2, rect.top + rect.height/2, "success");
+                }
+                showToast(`Inserted ${val} at index ${index}`);
+            }, 50);
+            
+            render();
+        }
+
+        function deleteHead() {
+            if (state.data.length === 0) { showToast("List is empty!", "error"); return; }
+            
+            // Capture value before animation
+            const deletedValue = state.data[0];
+            
+            const container = document.getElementById('visualizer');
+            const firstNode = container.firstElementChild;
+            
+            // Create floating animation to the left
+            createDeleteAnimation(firstNode, 'left');
+            
+            firstNode.classList.remove('node-enter');
+            firstNode.classList.add('node-exit');
+
+             setTimeout(() => {
+                state.data.shift();
+                render();
+            }, 400 * (state.speed/3));
+            showToast(`Deleted Head: ${deletedValue}`, "success");
+        }
+
+        function deleteTail() {
+            if (state.data.length === 0) { showToast("List is empty!", "error"); return; }
+            
+            // Capture value before animation
+            const deletedValue = state.data[state.data.length - 1];
+            
+            const container = document.getElementById('visualizer');
+            const wrappers = container.querySelectorAll('.flex.items-center');
+            const lastNode = wrappers[wrappers.length - 1];
+            
+            // Create floating animation to the right
+            createDeleteAnimation(lastNode, 'right');
+            
+            lastNode.classList.remove('node-enter');
+            lastNode.classList.add('node-exit');
+
+             setTimeout(() => {
+                state.data.pop();
+                render();
+            }, 400 * (state.speed/3));
+            showToast(`Deleted Tail: ${deletedValue}`, "success");
+        }
+
+        function findMiddle() {
+            if (state.data.length === 0) { showToast("List is empty!", "error"); return; }
+            
+            // Standard approach: Math.floor(length / 2)
+            const midIndex = Math.floor(state.data.length / 2);
+            const val = state.data[midIndex];
+
+            // Visual Highlight
+            const wrapper = document.getElementById(`node-${midIndex}`);
+            if (wrapper) {
+                const nodeBox = wrapper.firstElementChild; // The colored box div
+                // Add distinct middle highlight (golden) and reveal animation
+                const originalTransform = nodeBox.style.transform;
+                const originalBorder = nodeBox.style.border;
+
+                nodeBox.style.transition = "transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.4s";
+                nodeBox.classList.add('middle-highlight');
+                nodeBox.style.transform = "scale(1.35)";
+
+                // Show middle reveal popup (distinct from peek)
+                showMiddleReveal(val, nodeBox);
+
+                setTimeout(() => {
+                    nodeBox.classList.remove('middle-highlight');
+                    nodeBox.style.transform = originalTransform;
+                    nodeBox.style.border = originalBorder;
+                }, 1800);
+            }
+            
+            showToast(`Middle Node: ${val} (Index: ${midIndex})`);
+        }
+
+        // Show a distinct middle reveal animation (golden, prominent)
+        function showMiddleReveal(value, nodeElement) {
+            if (!nodeElement) return;
+            const rect = nodeElement.getBoundingClientRect();
+            const reveal = document.createElement('div');
+            reveal.className = 'middle-reveal';
+            reveal.style.position = 'fixed';
+            reveal.style.left = (rect.left + rect.width/2) + 'px';
+            reveal.style.top = (rect.top + rect.height/2) + 'px';
+            reveal.style.transform = 'translate(-50%, -50%)';
+            reveal.style.zIndex = '10001';
+            reveal.innerHTML = `<div style="font-size:12px;opacity:0.9;margin-bottom:4px;font-weight:700;">Middle</div><div style="font-size:20px;font-weight:900">${value}</div>`;
+            document.body.appendChild(reveal);
+
+            // small pulse ring behind
+            const ring = document.createElement('div');
+            ring.style.position = 'fixed';
+            ring.style.left = (rect.left + rect.width/2) + 'px';
+            ring.style.top = (rect.top + rect.height/2) + 'px';
+            ring.style.transform = 'translate(-50%, -50%)';
+            ring.style.width = Math.max(rect.width, rect.height) + 'px';
+            ring.style.height = Math.max(rect.width, rect.height) + 'px';
+            ring.style.borderRadius = '50%';
+            ring.style.zIndex = '10000';
+            ring.style.pointerEvents = 'none';
+            ring.style.boxShadow = '0 0 0 0 rgba(250, 204, 21, 0.9)';
+            ring.style.animation = 'peekRing 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards';
+            document.body.appendChild(ring);
+
+            setTimeout(() => {
+                reveal.style.transition = 'all 0.35s ease';
+                reveal.style.opacity = '0';
+                ring.remove();
+                setTimeout(() => reveal.remove(), 350);
+            }, 1200);
+        }
+
+        // --- New: Insert/Delete After Target ---
+        function insertAfterTarget() {
+            if (state.data.length >= state.maxSize) { showToast("List limit reached!", "error"); return; }
+            const val = getInput();
+            if (val === null) return;
+            const target = document.getElementById('targetInput').value.trim();
+            if (!target && target !== '0') { showToast('Enter target value', 'error'); return; }
+
+            const idx = state.data.indexOf(target);
+            if (idx === -1) {
+                showToast(`Target '${target}' not found`, 'error');
+                return;
+            }
+
+            // For singly/doubly/circular, insertion after target is same in array-model
+            state.data.splice(idx + 1, 0, val);
+            render();
+            showToast(`Inserted ${val} after ${target} (index ${idx})`);
+        }
+
+        function deleteAfterTarget() {
+            if (state.data.length === 0) { showToast('List is empty', 'error'); return; }
+            const target = document.getElementById('targetInput').value.trim();
+            if (!target && target !== '0') { showToast('Enter target value', 'error'); return; }
+
+            const idx = state.data.indexOf(target);
+            if (idx === -1) { showToast(`Target '${target}' not found`, 'error'); return; }
+
+            // determine index to delete (node after target)
+            let delIdx = idx + 1;
+
+            if (delIdx >= state.data.length) {
+                // no node after in non-circular; in circular the node after tail is head (index 0)
+                if (state.listType === 'circular' && state.data.length > 0) {
+                    delIdx = 0; // delete head when target is tail in circular
+                } else {
+                    showToast('No node exists after target', 'error');
+                    return;
+                }
+            }
+
+            const container = document.getElementById('visualizer');
+            const wrapper = document.getElementById(`node-${delIdx}`);
+            if (wrapper) {
+                wrapper.classList.remove('node-enter');
+                wrapper.classList.add('node-exit');
+            }
+
+            setTimeout(() => {
+                const removed = state.data.splice(delIdx, 1);
+                render();
+                showToast(`Deleted node ${removed} at index ${delIdx}`);
+            }, 400 * (state.speed/3));
+        }
+
+        // Utils
+        function clearAll() {
+            state.data = [];
+            render();
+            showToast("Cleared all data");
+        }
+
+        function handleRandom() {
+            const rand = Math.floor(Math.random() * 100);
+            document.getElementById('dataInput').value = rand;
+        }
+
+        function showToast(msg, type = "info") {
+            const toast = document.getElementById('toast');
+            const msgEl = document.getElementById('toastMsg');
+            
+            msgEl.innerText = msg;
+            
+            if(type === 'error') {
+                toast.classList.remove('bg-dark', 'dark:bg-white', 'text-white', 'dark:text-dark');
+                toast.classList.add('bg-red-500', 'text-white');
+            } else {
+                toast.classList.add('bg-dark', 'dark:bg-white', 'text-white', 'dark:text-dark');
+                toast.classList.remove('bg-red-500');
+            }
+
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        }
+
+        // Show animated peek card
+        function showPeekCard(value, nodeElement, position = 'top') {
+            const rect = nodeElement.getBoundingClientRect();
+            
+            // Create peek card
+            const card = document.createElement('div');
+            card.className = 'peek-card-enter';
+            card.style.position = 'fixed';
+            card.style.zIndex = '9999';
+            card.style.pointerEvents = 'none';
+            card.style.padding = '12px 28px';
+            card.style.borderRadius = '14px';
+            card.style.fontSize = '13px';
+            card.style.fontWeight = '800';
+            card.style.color = 'white';
+            card.style.background = 'linear-gradient(135deg, rgba(99, 102, 241, 0.98) 0%, rgba(59, 130, 246, 0.98) 50%, rgba(34, 197, 94, 0.85) 100%)';
+            card.style.boxShadow = '0 16px 40px rgba(0, 0, 0, 0.25), 0 0 30px rgba(99, 102, 241, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3)';
+            card.style.textShadow = '0 3px 8px rgba(0, 0, 0, 0.2)';
+            card.style.border = '1.5px solid rgba(255, 255, 255, 0.3)';
+            card.style.backdropFilter = 'blur(12px)';
+            card.style.webkitBackdropFilter = 'blur(12px)';
+            
+            // Position card with better centering
+            let left, top;
+            if (position === 'top') {
+                left = rect.left + rect.width/2;
+                top = rect.top - 75;
+            } else if (position === 'bottom') {
+                left = rect.left + rect.width/2;
+                top = rect.top + rect.height + 30;
+            } else if (position === 'right') {
+                left = rect.left + rect.width + 25;
+                top = rect.top + rect.height/2;
+            }
+            
+            card.style.left = left + 'px';
+            card.style.top = top + 'px';
+            card.style.transform = 'translate(-50%, -50%)';
+            
+            card.innerHTML = `<div style="font-size: 10px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 8px; font-weight: 700;">⚡ PEEK</div><div style="font-size: 20px; font-weight: 900; background: linear-gradient(135deg, #fff 0%, #f0f9ff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 0.5px;">${value}</div>`;
+            
+            document.body.appendChild(card);
+            
+            // Remove after animation
+            setTimeout(() => {
+                card.style.animation = 'cardBounce 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) reverse, cardGlow 1.5s ease-in-out infinite';
+                setTimeout(() => card.remove(), 500);
+            }, 1800);
+        }
+
+        // Highlight element with peek animation
+        function highlightPeekElement(element) {
+            if (!element) return;
+            
+            // Create ring animation
+            const ring = document.createElement('div');
+            ring.style.position = 'absolute';
+            ring.style.top = '50%';
+            ring.style.left = '50%';
+            ring.style.width = element.offsetWidth + 'px';
+            ring.style.height = element.offsetHeight + 'px';
+            ring.style.transform = 'translate(-50%, -50%)';
+            ring.style.pointerEvents = 'none';
+            ring.style.animation = 'peekRing 0.8s ease-out';
+            ring.style.borderRadius = '8px';
+            ring.style.boxShadow = '0 0 0 3px rgba(99, 102, 241, 0.7)';
+            
+            element.style.position = 'relative';
+            element.appendChild(ring);
+            
+            // Add smooth highlight effect with transition
+            const originalTransition = element.style.transition;
+            element.style.transition = 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+            element.classList.add('peek-highlight');
+            element.style.transform = 'scale(1.15)';
+            element.style.zIndex = '10';
+            
+            setTimeout(() => {
+                ring.remove();
+                element.classList.remove('peek-highlight');
+                element.style.transform = '';
+                element.style.zIndex = '';
+                element.style.transition = originalTransition;
+            }, 2400);
+        }
+
+        // Floating toast that appears at animation location
+        function showFloatingToast(msg, x, y, type = "success") {
+            const floatToast = document.createElement('div');
+            floatToast.style.position = 'fixed';
+            floatToast.style.left = x + 'px';
+            floatToast.style.top = y + 'px';
+            floatToast.style.transform = 'translate(-50%, -50%)';
+            floatToast.style.padding = '10px 20px';
+            floatToast.style.borderRadius = '8px';
+            floatToast.style.fontSize = '12px';
+            floatToast.style.fontWeight = '700';
+            floatToast.style.color = 'white';
+            floatToast.style.zIndex = '10000';
+            floatToast.style.pointerEvents = 'none';
+            floatToast.style.whiteSpace = 'nowrap';
+            floatToast.style.animation = 'floatUp 1.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards';
+            floatToast.style.boxShadow = '0 8px 16px rgba(0, 0, 0, 0.2), 0 0 20px rgba(0, 0, 0, 0.15)';
+            
+            if(type === 'error') {
+                floatToast.style.backgroundColor = '#ef4444';
+            } else {
+                floatToast.style.backgroundColor = '#10b981';
+            }
+            
+            floatToast.textContent = msg;
+            document.body.appendChild(floatToast);
+            
+            setTimeout(() => {
+                floatToast.remove();
+            }, 1200);
+        }
+
+        function toggleTheme() {
+            const html = document.querySelector('html');
+            html.classList.toggle('dark');
+        }
+
+        // --- AI Features (unchanged) ---
+        function openAIModal(title) {
+            const panelTitle = document.getElementById('aiPanelTitle');
+            panelTitle.innerText = title;
+            const content = document.getElementById('aiPanelContent');
+            const loading = document.getElementById('aiPanelLoading');
+            const quiz = document.getElementById('aiPanelQuizContainer');
+            
+            content.innerHTML = '';
+            content.classList.add('hidden');
+            quiz.classList.add('hidden');
+            loading.classList.remove('hidden');
+            loading.classList.add('flex');
+        }
+
+        function closeAIModal() {
+            // Optional: clear the panel
+        }
+
+        async function askGemini(type) {
+            let prompt = "";
+            let title = "";
+
+            // Construct Context
+            const dataStr = state.data.length > 0 ? state.data.join(', ') : "Empty";
+            const structure = dsInfo[state.mode].title;
+
+            if (type === 'explain') {
+                title = "State Explanation";
+                prompt = `You are a helpful Computer Science Tutor. \n                The user is looking at a ${structure} containing these values: [${dataStr}]. \n                The data structure type is '${state.mode}'.\n                \n                Please explain:\n                1. What is the current state of this structure?\n                2. Which specific value is at the 'Head', 'Front', or 'Top' (depending on the type)?\n                3. What exactly happens if a Delete/Pop operation is performed right now?\n                \n                Keep the response concise, friendly, and educational. Use markdown for bolding.`;
+            } else if (type === 'quiz') {
+                title = "Quick Quiz";
+                prompt = `Generate a single, different multiple-choice question about the ${structure} data structure that tests deep understanding. \n
+                Return ONLY valid JSON (no markdown, no explanation) in this exact format:
+                {
+                  "question": "The actual question text here?",
+                  "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
+                  "correctAnswer": 0,
+                  "explanation": "Why this answer is correct and brief explanation"
+                }
+                
+                Make sure questions vary each time and test: LIFO/FIFO behavior, time complexity, real-world usage, edge cases, or pointer mechanics.`;
+            }
+
+            openAIModal(title);
+            
+            // If no API key available, use local generation
+            if (!apiKey || apiKey.trim() === "") {
+                if (type === 'quiz') {
+                    displayLocalPanelQuiz(dsInfo[state.mode].title);
+                } else {
+                    const loading = document.getElementById('aiPanelLoading');
+                    const content = document.getElementById('aiPanelContent');
+                    const localText = generateLocalAIResponse(type, dsInfo[state.mode].title, state.data);
+                    const formattedText = localText.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    loading.classList.add('hidden');
+                    loading.classList.remove('flex');
+                    content.innerHTML = formattedText;
+                    content.classList.remove('hidden');
+                }
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: prompt }]
+                        }]
+                    })
+                });
+
+                if (!response.ok) throw new Error('API Error');
+
+                const data = await response.json();
+                const text = data.candidates[0].content.parts[0].text;
+                
+                const loading = document.getElementById('aiPanelLoading');
+                const content = document.getElementById('aiPanelContent');
+                const quizContainer = document.getElementById('aiPanelQuizContainer');
+                
+                loading.classList.add('hidden');
+                loading.classList.remove('flex');
+                
+                if (type === 'quiz') {
+                    try {
+                        const quizData = JSON.parse(text);
+                        displayPanelQuiz(quizData);
+                        content.classList.add('hidden');
+                        quizContainer.classList.remove('hidden');
+                    } catch (e) {
+                        content.innerHTML = '<p class="text-red-500">Error parsing quiz. ' + text.substring(0, 200) + '</p>';
+                        content.classList.remove('hidden');
+                    }
+                } else {
+                    const formattedText = text
+                        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\n/g, '<br>');
+                    content.innerHTML = formattedText;
+                    content.classList.remove('hidden');
+                }
+
+            } catch (error) {
+                console.error(error);
+                const loading = document.getElementById('aiPanelLoading');
+                const content = document.getElementById('aiPanelContent');
+                loading.classList.add('hidden');
+                loading.classList.remove('flex');
+                
+                if (type === 'quiz') {
+                    displayLocalPanelQuiz(dsInfo[state.mode].title);
+                } else {
+                    const fallback = generateLocalAIResponse(type, dsInfo[state.mode].title, state.data, true);
+                    content.innerHTML = fallback.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    content.classList.remove('hidden');
+                }
+            }
+        }
+
+        function displayQuiz(quizData) {
+            const questionEl = document.getElementById('quizQuestion');
+            const optionsEl = document.getElementById('quizOptions');
+            const resultEl = document.getElementById('quizResult');
+            const quizContainer = document.getElementById('aiQuizContainer');
+            
+            questionEl.innerText = quizData.question;
+            optionsEl.innerHTML = '';
+            resultEl.classList.add('hidden');
+            
+            quizData.options.forEach((option, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'px-2 py-1.5 rounded-lg border-2 border-primary/30 hover:border-primary bg-white dark:bg-gray-800 text-left text-gray-800 dark:text-gray-100 transition-all hover:shadow-sm text-xs';
+                btn.innerHTML = `<span class="font-semibold">${String.fromCharCode(65 + index)})</span> ${option}`;
+                btn.onclick = () => checkAnswer(index, quizData.correctAnswer, quizData.explanation, btn);
+                optionsEl.appendChild(btn);
+            });
+            
+            quizContainer.classList.remove('hidden');
+        }
+
+        function displayPanelQuiz(quizData) {
+            const questionEl = document.getElementById('aiPanelQuestion');
+            const optionsEl = document.getElementById('aiPanelOptions');
+            const resultEl = document.getElementById('aiPanelResult');
+            const quizContainer = document.getElementById('aiPanelQuizContainer');
+            
+            questionEl.innerText = quizData.question;
+            optionsEl.innerHTML = '';
+            resultEl.classList.add('hidden');
+            
+            quizData.options.forEach((option, index) => {
+                const btn = document.createElement('button');
+                btn.className = 'px-1.5 py-1 rounded-lg border-2 border-primary/30 hover:border-primary bg-white dark:bg-gray-800 text-left text-gray-800 dark:text-gray-100 transition-all hover:shadow-sm text-xs';
+                btn.innerHTML = `<span class="font-semibold">${String.fromCharCode(65 + index)})</span> ${option}`;
+                btn.onclick = () => checkPanelAnswer(index, quizData.correctAnswer, quizData.explanation, btn);
+                optionsEl.appendChild(btn);
+            });
+            
+            quizContainer.classList.remove('hidden');
+        }
+
+        function checkAnswer(selected, correct, explanation, clickedBtn) {
+            const optionsEl = document.getElementById('quizOptions');
+            const resultEl = document.getElementById('quizResult');
+            
+            // Disable all buttons
+            optionsEl.querySelectorAll('button').forEach(btn => {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+            });
+            
+            const isCorrect = selected === correct;
+            clickedBtn.classList.remove('border-primary/30', 'bg-white', 'dark:bg-gray-800');
+            
+            if (isCorrect) {
+                clickedBtn.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                resultEl.className = 'block mt-2 p-2 rounded-lg text-xs bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 leading-tight';
+                resultEl.innerHTML = '<strong class="text-green-700 dark:text-green-400">✓ Correct!</strong><br><span class="text-green-700 dark:text-green-300">' + explanation + '</span>';
+            } else {
+                clickedBtn.classList.add('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
+                // Highlight correct answer
+                const correctBtn = optionsEl.querySelectorAll('button')[correct];
+                correctBtn.classList.remove('border-primary/30', 'bg-white', 'dark:bg-gray-800');
+                correctBtn.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                
+                resultEl.className = 'block mt-2 p-2 rounded-lg text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 leading-tight';
+                resultEl.innerHTML = '<strong class="text-red-700 dark:text-red-400">✗ Incorrect!</strong><br><span class="text-red-700 dark:text-red-300"><strong>Correct:</strong> ' + String.fromCharCode(65 + correct) + ')<br>' + explanation + '</span>';
+            }
+            
+            resultEl.classList.remove('hidden');
+        }
+
+        function checkPanelAnswer(selected, correct, explanation, clickedBtn) {
+            const optionsEl = document.getElementById('aiPanelOptions');
+            const resultEl = document.getElementById('aiPanelResult');
+            
+            // Disable all buttons
+            optionsEl.querySelectorAll('button').forEach(btn => {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+            });
+            
+            const isCorrect = selected === correct;
+            clickedBtn.classList.remove('border-primary/30', 'bg-white', 'dark:bg-gray-800');
+            
+            if (isCorrect) {
+                clickedBtn.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                resultEl.className = 'block mt-2 p-1 rounded-lg text-xs bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 leading-tight';
+                resultEl.innerHTML = '<strong class="text-green-700 dark:text-green-400">✓ Correct!</strong><br><span class="text-green-700 dark:text-green-300 text-xs">' + explanation + '</span>';
+            } else {
+                clickedBtn.classList.add('border-red-500', 'bg-red-50', 'dark:bg-red-900/20');
+                // Highlight correct answer
+                const correctBtn = optionsEl.querySelectorAll('button')[correct];
+                correctBtn.classList.remove('border-primary/30', 'bg-white', 'dark:bg-gray-800');
+                correctBtn.classList.add('border-green-500', 'bg-green-50', 'dark:bg-green-900/20');
+                
+                resultEl.className = 'block mt-2 p-1 rounded-lg text-xs bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 leading-tight';
+                resultEl.innerHTML = '<strong class="text-red-700 dark:text-red-400">✗ Incorrect!</strong><br><span class="text-red-700 dark:text-red-300 text-xs"><strong>Ans:</strong> ' + String.fromCharCode(65 + correct) + ')<br>' + explanation + '</span>';
+            }
+            
+            resultEl.classList.remove('hidden');
+        }
+
+        function displayLocalQuiz(structureTitle) {
+            const quizzes = generateMultipleQuizzes(structureTitle);
+            const quizData = quizzes[Math.floor(Math.random() * quizzes.length)];
+            
+            const content = document.getElementById('aiContent');
+            const quizContainer = document.getElementById('aiQuizContainer');
+            
+            content.classList.add('hidden');
+            displayQuiz(quizData);
+            quizContainer.classList.remove('hidden');
+        }
+
+        function displayLocalPanelQuiz(structureTitle) {
+            const quizzes = generateMultipleQuizzes(structureTitle);
+            const quizData = quizzes[Math.floor(Math.random() * quizzes.length)];
+            
+            const content = document.getElementById('aiPanelContent');
+            const quizContainer = document.getElementById('aiPanelQuizContainer');
+            
+            content.classList.add('hidden');
+            displayPanelQuiz(quizData);
+            quizContainer.classList.remove('hidden');
+        }
+
+        function generateMultipleQuizzes(structureTitle) {
+            if (state.mode === 'stack') {
+                return [
+                    {
+                        question: "Which property best describes a Stack?",
+                        options: ["FIFO", "LIFO", "Random Access", "Bidirectional"],
+                        correctAnswer: 1,
+                        explanation: "A stack follows Last-In-First-Out (LIFO) order. The last element added is the first one to be removed."
+                    },
+                    {
+                        question: "What is the time complexity of Push operation in a stack?",
+                        options: ["O(n)", "O(log n)", "O(1)", "O(n²)"],
+                        correctAnswer: 2,
+                        explanation: "Push operation adds an element to the top of stack in constant O(1) time, regardless of stack size."
+                    },
+                    {
+                        question: "Which real-world scenario best uses a Stack?",
+                        options: ["Printer scheduling", "Browser back button", "CPU task scheduling", "Database queries"],
+                        correctAnswer: 1,
+                        explanation: "The browser's back button uses a stack - you go back to the most recent page visited (LIFO order)."
+                    },
+                    {
+                        question: "What happens when you pop from an empty stack?",
+                        options: ["Returns 0", "Stack Underflow error", "Pushes default value", "Returns null only"],
+                        correctAnswer: 1,
+                        explanation: "Popping from an empty stack causes Stack Underflow, which is an error condition."
+                    },
+                    {
+                        question: "If a stack has elements [5, 3, 8] with 8 at top, what is popped first?",
+                        options: ["5", "3", "8", "Nothing"],
+                        correctAnswer: 2,
+                        explanation: "8 is at the top of the stack and is the last element added, so it pops first (LIFO)."
+                    }
+                ];
+            }
+            
+            if (state.mode === 'queue') {
+                return [
+                    {
+                        question: "Which property best describes a Queue?",
+                        options: ["LIFO", "FIFO", "Random Access", "Circular"],
+                        correctAnswer: 1,
+                        explanation: "A queue follows First-In-First-Out (FIFO) order. The first element added is the first one to be removed."
+                    },
+                    {
+                        question: "What is the time complexity of Enqueue operation?",
+                        options: ["O(n)", "O(log n)", "O(1)", "O(n²)"],
+                        correctAnswer: 2,
+                        explanation: "Enqueue operation adds an element to the rear in constant O(1) time."
+                    },
+                    {
+                        question: "Which real-world scenario uses a Queue?",
+                        options: ["Function call stack", "Printer job scheduling", "Undo mechanism", "Cache storage"],
+                        correctAnswer: 1,
+                        explanation: "Printer job scheduling uses a queue - jobs are processed in the order they arrive (FIFO)."
+                    },
+                    {
+                        question: "In a circular queue, after the rear reaches the end, where does it point?",
+                        options: ["Middle", "Beginning", "Stack", "Null"],
+                        correctAnswer: 1,
+                        explanation: "In a circular queue, the rear wraps around to the beginning to reuse empty spaces."
+                    },
+                    {
+                        question: "If a queue has elements [10, 20, 30] with 10 at front, what dequeues first?",
+                        options: ["30", "20", "10", "Nothing"],
+                        correctAnswer: 2,
+                        explanation: "10 is at the front of the queue and is the first element added, so it dequeues first (FIFO)."
+                    }
+                ];
+            }
+            
+            if (state.mode === 'linkedList') {
+                return [
+                    {
+                        question: "What advantage does a linked list have over arrays?",
+                        options: ["Faster access", "Dynamic sizing", "Uses less memory", "Better caching"],
+                        correctAnswer: 1,
+                        explanation: "Linked lists can grow or shrink dynamically without reallocating memory like arrays do."
+                    },
+                    {
+                        question: "What is the time complexity of accessing the nth element in a singly linked list?",
+                        options: ["O(1)", "O(log n)", "O(n)", "O(n²)"],
+                        correctAnswer: 2,
+                        explanation: "You must traverse from head to reach the nth node, making it O(n) time complexity."
+                    },
+                    {
+                        question: "In a doubly linked list, each node contains:",
+                        options: ["Data and next pointer only", "Data, next, and prev pointers", "Data and index", "Data and capacity"],
+                        correctAnswer: 1,
+                        explanation: "Doubly linked list nodes have pointers to both next and previous nodes, allowing bidirectional traversal."
+                    },
+                    {
+                        question: "What does a circular linked list's tail point to?",
+                        options: ["Null", "The head", "The middle node", "Nothing"],
+                        correctAnswer: 1,
+                        explanation: "In a circular linked list, the tail points back to the head, forming a complete circle."
+                    },
+                    {
+                        question: "What is the time complexity of inserting at the beginning of a linked list?",
+                        options: ["O(n)", "O(log n)", "O(1)", "O(n²)"],
+                        correctAnswer: 2,
+                        explanation: "Insertion at the head takes O(1) time - just update the pointers, no traversal needed."
+                    },
+                    {
+                        question: "Which operation requires traversal in a singly linked list?",
+                        options: ["Insert at head", "Delete at head", "Access middle element", "Both insert at head and delete at head"],
+                        correctAnswer: 2,
+                        explanation: "Accessing any element except the head requires traversal from the beginning."
+                    }
+                ];
+            }
+            
+            // Default fallback
+            return [
+                {
+                    question: "What is a data structure?",
+                    options: ["A way to organize data", "A programming language", "A type of algorithm", "A database"],
+                    correctAnswer: 0,
+                    explanation: "A data structure is a specialized format for organizing, processing, and storing data efficiently."
+                }
+            ];
+        }
+
+        // Local AI fallback generator (simple, deterministic)
+        function generateLocalAIResponse(type, structureTitle, dataArray, isErrorFallback = false) {
+            const dataStr = dataArray.length > 0 ? dataArray.join(', ') : 'Empty';
+
+            if (type === 'explain') {
+                let topLabel = 'Top/Front/Head';
+                let importantVal = 'None';
+                if (dataArray.length > 0) {
+                    if (state.mode === 'stack') {
+                        topLabel = 'Top';
+                        importantVal = dataArray[dataArray.length - 1];
+                    } else if (state.mode === 'queue') {
+                        topLabel = 'Front';
+                        importantVal = dataArray[0];
+                    } else if (state.mode === 'linkedList') {
+                        topLabel = 'Head';
+                        importantVal = dataArray[0];
+                    }
+                }
+
+                const deleteBehavior = (state.mode === 'stack')
+                    ? `If you perform a **Pop**, the element **${importantVal}** (the TOP) will be removed and the next item below it becomes the new TOP.`
+                    : (state.mode === 'queue')
+                        ? `If you perform a **Dequeue**, the element **${importantVal}** (the FRONT) will be removed and the next element becomes the new FRONT.`
+                        : `If you perform a **Delete Head**, the element **${importantVal}** (the HEAD) will be removed and the next node becomes the new HEAD.`;
+
+                const explanation = `**Structure:** ${structureTitle}\n**Contents:** [${dataStr}]\n**${topLabel}:** ${importantVal}\n\n${deleteBehavior}\n\n${isErrorFallback ? '*Note: This response was generated locally because the AI service was unavailable.*' : ''}`;
+                return explanation;
+            }
+
+            if (type === 'quiz') {
+                // Simple deterministic quiz based on mode
+                if (state.mode === 'stack') {
+                    return `**Question:** Which property best describes a Stack?\n\nA) FIFO\nB) LIFO\nC) Random Access\n\n**Answer:** B) LIFO — A stack follows Last-In-First-Out order.`;
+                }
+                if (state.mode === 'queue') {
+                    return `**Question:** Which operation removes the element that arrived earliest in a Queue?\n\nA) Push\nB) Dequeue\nC) Peek\n\n**Answer:** B) Dequeue — Queue removes from the front (FIFO).`;
+                }
+                if (state.mode === 'linkedList') {
+                    return `**Question:** In a singly linked list, which pointer does each node store?\n\nA) A pointer to previous and next\nB) A pointer to the next node only\nC) No pointers, contiguous memory\n\n**Answer:** B) A pointer to the next node only — singly linked lists store a reference to the next node.`;
+                }
+            }
+
+            return '*No local response available.*';
+        }
+
+    </script>
+</body>
+</html>
